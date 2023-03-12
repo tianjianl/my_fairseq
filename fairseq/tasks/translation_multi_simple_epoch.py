@@ -72,6 +72,8 @@ class TranslationMultiSimpleEpochTask(LegacyFairseqTask):
                             action=FileContentsAction)
         parser.add_argument('--keep-inference-langtok', action='store_true',
                             help='keep language tokens in inference output (e.g. for analysis or debugging)')
+        
+        parser.add_argument('--weighted-dropout-iters', default=0, help='the interval for calculating parameter sensitivity and performing weighted dropout')
 
         SamplingMethod.add_arguments(parser)
         MultilingualDatasetManager.add_args(parser)
@@ -82,6 +84,7 @@ class TranslationMultiSimpleEpochTask(LegacyFairseqTask):
         self.langs = langs
         self.dicts = dicts
         self.training = training
+        self.weighted_dropout_iters = args.weighted-dropout-iters
         if training:
             self.lang_pairs = args.lang_pairs
         else:
@@ -218,6 +221,67 @@ class TranslationMultiSimpleEpochTask(LegacyFairseqTask):
 
     def build_model(self, args, from_checkpoint=False):
         return super().build_model(args, from_checkpoint)
+
+    def train_step(
+        self, sample, model, criterion, optimizer, update_num, ignore_grad=False
+    ):
+        """
+        Do forward and backward, and return the loss as computed by *criterion*
+        for the given *model* and *sample*.
+
+        Args:
+            sample (dict): the mini-batch. The format is defined by the
+                :class:`~fairseq.data.FairseqDataset`.
+            model (~fairseq.models.BaseFairseqModel): the model
+            criterion (~fairseq.criterions.FairseqCriterion): the criterion
+            optimizer (~fairseq.optim.FairseqOptimizer): the optimizer
+            update_num (int): the current update
+            ignore_grad (bool): multiply loss by 0 if this is set to True
+
+        Returns:
+            tuple:
+                - the loss
+                - the sample size, which is used as the denominator for the
+                  gradient
+                - logging outputs to display while training
+        """
+        model.train()
+        model.set_num_updates(update_num)
+        with torch.autograd.profiler.record_function("forward"):
+            with torch.cuda.amp.autocast(enabled=(isinstance(optimizer, AMPOptimizer))):
+                loss, sample_size, logging_output = criterion(model, sample)
+        if ignore_grad:
+            loss *= 0
+        with torch.autograd.profiler.record_function("backward"):
+            optimizer.backward(loss)
+        
+        #weighted dropout
+        if update_num % self.weighted_dropout_iters != 0:
+            return loss, sample_size, logging_output
+
+        for name, params in model.named_parameters():
+            if 'embeddings' in name:
+                continue
+
+            if params.requires_grad:
+                param_shape = params.shape
+                grad = params.grad.clone().detach().view(-1)
+                p = params.clone().view(-1)
+                scores = torch.abs(grad*p)
+                
+                plt.figure(number)
+                
+                normalized_scores = scores - scores.min()
+                normalized_scores /= scores.max()
+                
+                logits = torch.rand(len(normalized_scores), device='cuda')
+                mask = logits >= normalized_scores 
+                p = p*mask
+                params = p.view(param_shape)
+
+
+        return loss, sample_size, logging_output
+
 
     def valid_step(self, sample, model, criterion):
         loss, sample_size, logging_output = super().valid_step(sample, model, criterion)
