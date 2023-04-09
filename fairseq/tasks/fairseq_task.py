@@ -18,7 +18,7 @@ from fairseq.dataclass.utils import gen_parser_from_dataclass
 from fairseq.optim.amp_optimizer import AMPOptimizer
 from omegaconf import DictConfig
 
-
+import matplotlib.pyplot as plt
 logger = logging.getLogger(__name__)
 
 
@@ -525,11 +525,38 @@ class FairseqTask(object):
                   gradient
                 - logging outputs to display while training
         """
+        
         model.train()
         model.set_num_updates(update_num)
         with torch.autograd.profiler.record_function("forward"):
             with torch.cuda.amp.autocast(enabled=(isinstance(optimizer, AMPOptimizer))):
                 loss, sample_size, logging_output = criterion(model, sample)
+        
+        if update_num % 200 == 0:
+            all_scores = []
+            for name, params in model.named_parameters():
+                if 'embed_tokens' in name:
+                    continue
+                if params.requires_grad == False:
+                    continue
+                p = params.clone().view(-1)
+                grad = params.grad.clone().view(-1)
+                scores = torch.abs(p*grad)
+                scores = scores.to('cpu')
+                scores = scores.tolist()
+                all_scores.append(scores)
+            
+            var, mean = np.var(all_scores), np.mean(all_scores)
+
+            plt.figure()
+            plt.violinplot(all_scores)
+            plt.ylabel('Parameter Importance')
+            plt.savefig(f"/export/c11/tli104/plots_with_dropout/{epoch}_{iteration}.pdf")
+            f = open('/home/tli104/my_fairseq/importance_log_with_dropout', 'a+')
+            print(f"{epoch} {iteration} {mean} {var}", file=f)
+            print(f"epoch = {epoch} | iteration = {iteration} | mean = {mean} | var ={var}")
+            plt.close()
+
         if ignore_grad:
             loss *= 0
         with torch.autograd.profiler.record_function("backward"):

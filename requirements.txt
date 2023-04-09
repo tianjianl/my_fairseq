@@ -1,0 +1,6 @@
+fastBPE 
+sacremoses 
+subword_nmt
+tensorboardX
+sentencepiece
+

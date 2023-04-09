@@ -269,8 +269,6 @@ class TranslationMultiSimpleEpochTask(LegacyFairseqTask):
                 p = params.clone().view(-1)
                 scores = torch.abs(grad*p)
                 
-                plt.figure(number)
-                
                 normalized_scores = scores - scores.min()
                 normalized_scores /= scores.max()
                 
