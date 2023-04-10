@@ -121,8 +121,8 @@ class Translation_Weighted_Dropout(TranslationTask):
                     normalized_scores /= scores.max()
                     #weighted dropout
                     logits = torch.rand(len(normalized_scores), device='cuda')
-                    mask = logits >= normalized_scores
-                    p = p*mask
+                    mask = (logits >= normalized_scores).type(torch.float)
+                    p = p*mask*len(mask)/torch.norm(mask, p=1)
                     params.data = p.view(param_shape)
             
             

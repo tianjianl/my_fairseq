@@ -1,4 +1,3 @@
-
 WORKSPACE=workspace
 mkdir ${WORKSPACE}
 cd ${WORKSPACE}
