@@ -3,4 +3,6 @@ sacremoses
 subword_nmt
 tensorboardX
 sentencepiece
-
+gdown
+matplotlib
+scikit-learn

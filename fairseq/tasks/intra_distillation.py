@@ -91,8 +91,24 @@ class TranslationIntraDistillationConfig(TranslationConfig):
             "help": "type of divergence"
         },
     )
+    
+    importance_metric: str = field(
+        default="magnitude"
+        metadata={
+            "help": "supports magnitude, loss-perserving and fisher information"
+        }
+    )
+    
+    smooth_scores: bool = field(
+        default=False
+        metadata={
+            "help": "whether or not to smooth the scores"
+        }
+    )
 
-
+    weighted_freezing: bool = field(
+        default=False
+    )
 
 @register_task("translation_intra_distillation", dataclass=TranslationIntraDistillationConfig)
 class Translation_Intra_Distillation(TranslationTask):
@@ -168,7 +184,8 @@ class Translation_Intra_Distillation(TranslationTask):
     ):
         model.train()
         model.set_num_updates(update_num)
-
+        
+        """
         losses, logits, logging_outputs = [], [], []
 
         for _ in range(self.cfg.num_iter):
@@ -178,7 +195,7 @@ class Translation_Intra_Distillation(TranslationTask):
                     losses.append(loss)
                     logits.append(logit)
                     logging_outputs.append(logging_output)
-
+        
         pad_mask = sample["target"].eq(criterion.padding_idx)
         if self.cfg.div == "X":
             intra_distillation_loss = X_loss(logits, pad_mask)
@@ -189,21 +206,45 @@ class Translation_Intra_Distillation(TranslationTask):
 
         alpha = self._get_alpha(self.cfg.alpha, update_num, self.cfg.max_updates_train)
         loss = sum(losses)/len(losses) + intra_distillation_loss * alpha
-        
-        logging_output = {
-            "loss": torch.tensor([log["loss"] for log in logging_outputs]),
-            "nll_loss": torch.tensor([log["nll_loss"] for log in logging_outputs]),
-            "ntokens": sample["ntokens"],
-            "nsentences": sample["target"].size(0),
-            "sample_size": sample_size,
-            "intra_distillation_loss": intra_distillation_loss.data
-        }
+        """
+
+        with torch.autograd.profiler.record_function("forward"):
+            with torch.cuda.amp.autocast(enabled=(isinstance(optimizer, AMPOptimizer))):
+                loss, logit, sample_size, logging_output = self._get_loss(sample, model, critierion)
 
         if ignore_grad:
             loss *= 0
-
-        with torch.autograd.profiler.record_function("backward"):
-            optimizer.backward(loss)
+    
+        #with torch.autograd.profiler.record_function("backward"):
+            #optimizer.backward(loss)
+        
+        dropout_params = ['proj', 'fc']
+        
+        if self.cfg.weighted_freezing == False:
+            with torch.autograd.profiler.record_function("backward"):
+                optimizer.backward(loss)
+            return loss, sample_size, logging_output
+        
+        loss.backward() #calculate gradient 
+        
+        for n, p in model.named_parameters():
+            if any(nd in n for nd in dropout_params):
+                params = p.detach().clone()
+                
+                if self.cfg.importance_metric == 'magnitude':
+                    scores = torch.abs(params)
+                elif self.cfg.importance_metric == 'loss-perserving':
+                    grad = p.grad.detach().clone()
+                    scores = torch.abs(params*grad)
+                
+                if self.cfg.smooth_scores:
+                    scores = torch.sqrt(scores*0.5)
+                
+                mask = torch.bernoulli(scores)
+                p.grad = p.grad*mask
+        
+        optimizer.step()
+        optimizer.zero_grad()
         return loss, sample_size, logging_output
 
     def reduce_metrics(self, logging_outputs, criterion):
