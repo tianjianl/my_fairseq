@@ -93,14 +93,14 @@ class TranslationIntraDistillationConfig(TranslationConfig):
     )
     
     importance_metric: str = field(
-        default="magnitude"
+        default="magnitude",
         metadata={
             "help": "supports magnitude, loss-perserving and fisher information"
         }
     )
     
     smooth_scores: bool = field(
-        default=False
+        default=False,
         metadata={
             "help": "whether or not to smooth the scores"
         }
@@ -210,7 +210,7 @@ class Translation_Intra_Distillation(TranslationTask):
 
         with torch.autograd.profiler.record_function("forward"):
             with torch.cuda.amp.autocast(enabled=(isinstance(optimizer, AMPOptimizer))):
-                loss, logit, sample_size, logging_output = self._get_loss(sample, model, critierion)
+                loss, logit, sample_size, logging_output = self._get_loss(sample, model, criterion)
 
         if ignore_grad:
             loss *= 0
