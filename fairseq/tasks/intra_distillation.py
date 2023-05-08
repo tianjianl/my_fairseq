@@ -234,7 +234,7 @@ class Translation_Intra_Distillation(TranslationTask):
                 if self.cfg.importance_metric == 'magnitude':
                     scores = torch.abs(params)
                 elif self.cfg.importance_metric == 'loss-perserving':
-                    grad = p.grad.detach().clone()
+                    grad = p.grad.clone()
                     scores = torch.abs(params*grad)
                 
                 if self.cfg.smooth_scores:
