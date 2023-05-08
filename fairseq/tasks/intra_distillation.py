@@ -228,20 +228,22 @@ class Translation_Intra_Distillation(TranslationTask):
         loss.backward() #calculate gradient 
         
         for n, p in model.named_parameters():
-            if any(nd in n for nd in dropout_params):
+            if any(nd in n for nd in dropout_params) and 'bias' not in n:
                 params = p.detach().clone()
                 
                 if self.cfg.importance_metric == 'magnitude':
                     scores = torch.abs(params)
                 elif self.cfg.importance_metric == 'loss-perserving':
-                    grad = p.grad.clone()
+                    grad = p.grad.detach().clone()
                     scores = torch.abs(params*grad)
                 elif self.cfg.importance_metric == 'fisher':
                     grad = p.grad.detach().clone()
                     scores = params*grad*grad
-                if self.cfg.smooth_scores:
-                    scores = torch.sqrt(scores*0.5)
                 
+                scores = (scores - torch.min(scores)) / (torch.max(scores) - torch.min(scores))
+                if self.cfg.smooth_scores:
+                    scores = torch.sqrt(scores * 0.5)
+
                 mask = torch.bernoulli(scores)
                 p.grad = p.grad*mask
         
