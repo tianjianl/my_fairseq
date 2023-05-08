@@ -236,7 +236,9 @@ class Translation_Intra_Distillation(TranslationTask):
                 elif self.cfg.importance_metric == 'loss-perserving':
                     grad = p.grad.clone()
                     scores = torch.abs(params*grad)
-                
+                elif self.cfg.importance_metric == 'fisher':
+                    grad = p.grad.detach().clone()
+                    scores = params*grad*grad
                 if self.cfg.smooth_scores:
                     scores = torch.sqrt(scores*0.5)
                 
