@@ -93,14 +93,14 @@ class TranslationIntraDistillationConfig(TranslationConfig):
     )
     
     importance_metric: str = field(
-        default="magnitude"
+        default="magnitude",
         metadata={
             "help": "supports magnitude, loss-perserving and fisher information"
         }
     )
     
     smooth_scores: bool = field(
-        default=False
+        default=False,
         metadata={
             "help": "whether or not to smooth the scores"
         }
@@ -236,7 +236,9 @@ class Translation_Intra_Distillation(TranslationTask):
                 elif self.cfg.importance_metric == 'loss-perserving':
                     grad = p.grad.detach().clone()
                     scores = torch.abs(params*grad)
-                
+                elif self.cfg.importance_metric == 'fisher':
+                    grad = p.grad.detach().clone()
+                    scores = params*grad*grad
                 if self.cfg.smooth_scores:
                     scores = torch.sqrt(scores*0.5)
                 
