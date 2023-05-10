@@ -110,6 +110,12 @@ class TranslationIntraDistillationConfig(TranslationConfig):
         default=False
     )
 
+    start_freezing: int = field(
+        default=0,
+        metadata={"help": "when to start using gradual freezing"}
+    )
+
+
 @register_task("translation_intra_distillation", dataclass=TranslationIntraDistillationConfig)
 class Translation_Intra_Distillation(TranslationTask):
     """
@@ -220,7 +226,7 @@ class Translation_Intra_Distillation(TranslationTask):
         
         dropout_params = ['proj', 'fc']
         
-        if self.cfg.weighted_freezing == False:
+        if self.cfg.weighted_freezing == False or update_num < self.cfg.start_freezing:
             with torch.autograd.profiler.record_function("backward"):
                 optimizer.backward(loss)
             return loss, sample_size, logging_output
@@ -238,7 +244,7 @@ class Translation_Intra_Distillation(TranslationTask):
                     scores = torch.abs(params*grad)
                 elif self.cfg.importance_metric == 'fisher':
                     grad = p.grad.detach().clone()
-                    scores = params*grad*grad
+                    scores = grad ** 2
                 
                 scores = (scores - torch.min(scores)) / (torch.max(scores) - torch.min(scores))
                 if self.cfg.smooth_scores:
